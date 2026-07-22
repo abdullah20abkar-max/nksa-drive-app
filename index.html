@@ -798,10 +798,7 @@ function fetchSheetData(timeoutMs = 8000){
 // page visit — which we can confirm works because pasting the same URL
 // directly into the address bar returns valid data. This actually
 // navigates the whole browser away and back, with the data riding along
-// in the URL fragment (#), so nothing is published anywhere. Because the
-// page fully reloads, this is only used for the admin panel's explicit,
-// user-initiated data load — never silently in the background — and it
-// restores straight back into the admin screen with the data applied.
+// in the URL fragment (#), so nothing is published anywhere.
 //
 // IMPORTANT: browsers refuse to navigate FROM a remote https:// page BACK
 // TO a local file:// page (a security restriction, not a bug) — so this
@@ -809,13 +806,13 @@ function fetchSheetData(timeoutMs = 8000){
 // real https:// URL (Replit, GitHub Pages, SharePoint, etc.), not when
 // opened as a local file. We check for that up front so a local file
 // never gets sent on a trip it can't return from.
-function fetchSheetDataViaNavigation(){
+function fetchSheetDataViaNavigation(target = 'admin'){
   if(window.location.protocol === 'file:'){
     lastSheetFetchError = 'This fallback needs the app to be hosted at a real https:// link — browsers won\'t navigate back to a local file for security reasons. Host the app (Replit/GitHub Pages/SharePoint) to enable this.';
     return false;
   }
   const cleanUrl = window.location.href.split('#')[0];
-  localStorage.setItem('driveReturnTo', 'admin');
+  localStorage.setItem('driveReturnTo', target);
   const separator = GOOGLE_SHEET_WEBHOOK_URL.includes('?') ? '&' : '?';
   window.location.href = `${GOOGLE_SHEET_WEBHOOK_URL}${separator}mode=redirect&returnTo=${encodeURIComponent(cleanUrl)}`;
   // Execution stops here once navigation begins — nothing after this
@@ -930,8 +927,19 @@ function hideNameSuggestions(){
 }
 
 async function loadEmployeesInBackground(){
-  const remote = await fetchSheetData(4000);
-  if(remote && remote.employees) allEmployees = remote.employees;
+  const remote = await fetchSheetData(3000);
+  if(remote && remote.employees){
+    allEmployees = remote.employees;
+    return;
+  }
+  // The quiet background read didn't come back in time — this network
+  // likely blocks script.google.com as an embedded resource (confirmed
+  // via Console on this exact setup). Fall back to the page-visit trick,
+  // which works once the app is hosted at a real link. Guarded by a
+  // one-shot flag so a genuinely empty/unreachable Sheet can't loop.
+  if(sessionStorage.getItem('driveEmployeesRetried')) return;
+  sessionStorage.setItem('driveEmployeesRetried', '1');
+  fetchSheetDataViaNavigation('login');
 }
 
 /* ---------------- Login ---------------- */
